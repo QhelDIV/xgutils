@@ -41,14 +41,15 @@ dflt_camera = dict(camPos=np.array([2,2,2]), camLookat=np.array([0.,0.,0.]),\
 def renderMeshCloud(    mesh=None, mesh_outline_width=None, meshflat=False,  # mesh settings
                         cloud=None, cloudR=0.006, cloudC=None,  # pc settings
                         camPos=None, camLookat=None, camUp=np.array([0,0,1]), camHeight=1.,  # camera settings
-                        samples=8, axes=False, bbox=False, resolution=(1024,1024),  # render settings
-                        **kwargs):
+                        samples=32, axes=False, bbox=False, resolution=(1024,1024),  # render settings
+                        lights="rembrandt", **kwargs):
     device = fresnel.Device()
+    gray_color = np.array([0.7,0.7,0.7])
 
     scene = fresnel.Scene(device)
     if mesh is not None and mesh['vert'].shape[0]>0:
         mesh = fresnel.geometry.Mesh(scene,vertices=mesh['vert'][mesh['face']].reshape(-1,3) ,N=1)
-        mesh.material = fresnel.material.Material(color=fresnel.color.linear([0.7,0.7,0.7]), 
+        mesh.material = fresnel.material.Material(color=fresnel.color.linear(gray_color), 
                                                     roughness=0.3,
                                                     specular=1.,
                                                     spec_trans=0.)
@@ -57,11 +58,15 @@ def renderMeshCloud(    mesh=None, mesh_outline_width=None, meshflat=False,  # m
     if cloud is not None and cloud.shape[0]>0:
         cloud = fresnel.geometry.Sphere(scene, position = cloud, radius=cloudR)
         solid = .7 if mesh is not None else 0.
+        
+        cloud_flat_color = np.array([253, 204, 134])/256
+        if cloudC is not None and len(cloudC)==3:
+            cloud_flat_color = cloudC
         cloud.material = fresnel.material.Material(solid=solid, \
-                                                    color=fresnel.color.linear([1,0.0,0]),\
+                                                    color=fresnel.color.linear(cloud_flat_color),\
                                                     roughness=1.0,
                                                     specular=0.0)
-        if cloudC is not None:
+        if cloudC is not None and len(cloudC)!=3:
             cloud.material.primitive_color_mix = 1.0
 
             cloud.color[:] = fresnel.color.linear(plt.cm.plasma(cloudC)[:,:3])
@@ -73,11 +78,16 @@ def renderMeshCloud(    mesh=None, mesh_outline_width=None, meshflat=False,  # m
         scene.camera = fresnel.camera.fit(scene,margin=0)
     else:
         scene.camera = fresnel.camera.orthographic(camPos, camLookat, camUp, camHeight)
-    scene.lights = fresnel.light.cloudy()
-    scene.lights = fresnel.light.rembrandt()
-    #scene.lights = fresnel.light.lightbox()
-    #scene.lights = fresnel.light.loop()
-    #scene.lights = fresnel.light.butterfly()
+    if lights == "cloudy":
+        scene.lights = fresnel.light.cloudy()
+    if lights == "rembrandt":
+        scene.lights = fresnel.light.rembrandt()
+    if lights == "lightbox":
+        scene.lights = fresnel.light.lightbox()
+    if lights == "loop":
+        scene.lights = fresnel.light.loop()
+    if lights == "butterfly":
+        scene.lights = fresnel.light.butterfly()
     #scene.lights[0].theta = 3
 
     tracer = fresnel.tracer.Path(device=device, w=resolution[0], h=resolution[1])

@@ -185,6 +185,19 @@ def dataset_to_h5(dset, outdir='~/temp/temp.h5'):
         if type(dataDict[key]) is torch.Tensor:
             dataDict[key] = th2np(dataDict[key])
     nputil.writeh5(outdir, dataDict)
+def dataset_generator(dset, data_indices=[0,1,2], device="cuda"):
+    for ind in data_indices:
+        dataitem = dset.__getitem__(ind)
+        batch = {}
+        for key in dataitem:
+            datakey = dataitem[key]
+            if type(datakey) is not np.ndarray and type(datakey) is not torch.Tensor:
+                continue
+            datakey = dataitem[key][None,...]
+            if type(datakey) is np.ndarray:
+                datakey = torch.from_numpy(datakey)
+            batch[key] = datakey.to(device)
+        yield batch
 
 # Fold and Unfold
 def unfold_cube(tensor, last_dims=2, size=2, step=2, flatten=True):
