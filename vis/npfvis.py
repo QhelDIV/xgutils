@@ -113,7 +113,7 @@ def plot_3d_sample(Xct:np.ndarray, Yct, Xtg, Ytg:np.ndarray=None, pred_y:np.ndar
         vert, face = geoutil.array2mesh(pred_target_y, dim=3, coords=Xtg, thresh=.5, if_decimate=True)
         shape = {'vert':vert, 'face':face}
         if context_x.shape[0] > 0:
-            if context_y is not None and vert.shape[0]>10 and face.shape[0]>10:
+            if vert.shape[0]>10 and face.shape[0]>10:
                 context_error = np.abs(geoutil.signed_distance(context_x, vert, face)[0] ) #- context_y[:,0] )
             else:
                 context_error = np.zeros((context_x.shape[0]))+10

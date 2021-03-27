@@ -6,7 +6,7 @@ import mcubes
 import numpy as np
 
 from skimage.measure import find_contours
-from xgutils import nputil, ptutil
+from xgutils import nputil, ptutil, sysutil
 def length(x):
     return np.linalg.norm(x)
 def point2lineDistance(q, p1, p2):
@@ -209,6 +209,55 @@ def mesh2sdf(vert, face, gridDim=64, disturb=False):
 def pc2sdf():
     #TODO
     pass
+
+# open3d related
+class Open3D_Toolbox():
+    def __init__(self):
+        import open3d as o3d
+        self.o3d = o3d
+    def poisson_recon(self, cloud, estimate_normals=True, depth=6, quantile=.3, knn=10):
+        o3d=self.o3d
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(cloud)
+        pcd.normals = o3d.utility.Vector3dVector(np.zeros((1, 3)))  # invalidate existing normals
+        pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(knn=knn))
+        #with o3d.utility.VerbosityContextManager(
+        #    o3d.utility.VerbosityLevel.Debug) as cm:
+        poi_mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(pcd, depth=depth)
+        vertices_to_remove = densities<(np.quantile(densities, quantile))
+        poi_mesh.remove_vertices_by_mask(vertices_to_remove)
+        return np.asarray(poi_mesh.vertices), np.asarray(poi_mesh.triangles)
+    def ball_pivoting(self, cloud, radii=[0.01, 0.02, 0.04], knn=30):
+        o3d=self.o3d
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(cloud)
+        pcd.normals = o3d.utility.Vector3dVector(np.zeros((1, 3)))  # invalidate existing normals
+        pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(knn=knn))
+
+        rec_mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_ball_pivoting( pcd, o3d.utility.DoubleVector(radii) )
+        return np.asarray(rec_mesh.vertices), np.asarray(rec_mesh.triangles)
+
+class Meshlab_Toolbox():
+    def __init__(self):
+        import pymeshlab
+        self.mlab = pymeshlab
+    def poisson_recon(self, cloud, estimate_normals=True, depth=6, fulldepth=4, knn=10):
+        pymeshlab = self.mlab
+        temp_dir = os.path.expanduser('~/.temp/meshlab/')
+        sysutil.mkdirs(temp_dir)
+        cloud_path = os.path.join(temp_dir, "cloud.pts")
+        recon_path = os.path.join(temp_dir, "recon.ply")
+
+        np.savetxt(cloud_path, cloud)
+
+        ms = pymeshlab.MeshSet()
+        ms.load_new_mesh(cloud_path)
+        ms.compute_normals_for_point_sets(k=20)
+        ms.surface_reconstruction_screened_poisson(depth=depth, fulldepth=fulldepth)
+        ms.save_current_mesh(recon_path)
+        vert, face = igl.read_triangle_mesh(recon_path)
+        return vert, face
+
 # grid sampling (inefficient)
 def shapes2sdfs(shapePath, sdfPath, indices=np.arange(10), gridDim=256, disturb=False):
     #shapeDict = readh5(shapePath)
