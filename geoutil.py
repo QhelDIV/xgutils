@@ -6,6 +6,7 @@ import mcubes
 import numpy as np
 
 from skimage.measure import find_contours
+from skimage import morphology
 from xgutils import nputil, ptutil, sysutil
 def length(x):
     return np.linalg.norm(x)
@@ -93,7 +94,35 @@ def fibonacci_sphere(samples=1000):
         points.append([x,y,z])
 
     return points
-
+# mesh operation
+def mergeMeshes(meshes):
+    verts = []
+    faces = []
+    total_vert_num = 0
+    for mesh in meshes:
+        verts.append(mesh["vert"])
+        faces.append(mesh["face"]+total_vert_num)
+        if len(faces[-1].shape)==1:
+            faces[-1] = faces[-1].reshape(1,-1)
+        total_vert_num += len(verts[-1])
+        assert len(verts[-1].shape)==2 and len(faces[-1].shape)==2, "Invalid mesh!" 
+    verts = np.concatenate(verts)
+    faces = np.concatenate(faces)
+    return {"vert":verts, "face":faces}
+def filterMesh(vert, face, filterV):
+    v_keep_mask = filterV
+    v_del_mask  = 1-filterV
+    
+    newIndV = np.zeros(vert.shape[0])-1
+    newIndV[v_keep_ind] = np.arange(v_keep_ind.sum()).astype(int)
+    nv = vert[v_keep_ind]
+    f_keep_mask = (v_keep_mask[face].sum(axis=-1)==3)
+    nf = face[f_keep_mask]
+    nf = newIndV[nf]
+    assert (nf>0).all(), "New face list contains removed vertices" 
+    return nv, nf
+    # TODO filterF
+# reconstruction & sampling
 def array2mesh(array, thresh=0., dim=3, coords=None, bbox=np.array([[-1,-1],[1,1]]), return_coords=False, \
                 if_decimate=False, decimate_face=4096, cart_coord=True):
     """from 1-D array to 3D mesh
@@ -290,7 +319,24 @@ def points_sdf(targetx, sign, ref):
     dist = points_dist(targetx, ref)
     dist = np.sign(sign)*dist
     return dist
-
+# voxelization
+def morph_voxelization(vert, face, sampleN=1000000, grid_dim=128, selem_size=6):
+    """ Morphological voxelization. Given arbitrary triangle soup, return the watertight voxelization of it.
+        First sample cloud from mesh, voxelize the cloud, dilate, floodfill, erose. Note that dilate+erose=closing
+    """
+    vmin, vmax = np.abs(vert).min(), np.abs(vert).max()
+    if vmax<1.:
+        print(f"Warning: Mesh should be fallen into [-1,1]^3 bounding box! vmin:{vmin} vmax:{vmax}")
+    samples = sampleMesh(vert, face, sampleN)
+    voxel, coords = ptutil.ths2nps(ptutil.point2voxel(samples[None,...], grid_dim=grid_dim, ret_coords=True))
+    voxel, coords = voxel[0], coords[0]
+    
+    selem = morphology.ball(selem_size)
+    dilated = morphology.binary_dilation(voxel, selem)
+    mask    = 1-morphology.flood(dilated, (0, 0, 0))
+    erosed  = morphology.binary_erosion(mask, selem)
+    water_tight_voxel = erosed
+    return water_tight_voxel, coords
 # coordinate transforms
 def shapenetv1_to_shapenetv2(voxel):
     return np.flip(np.transpose(voxel, (2,1,0)),2).copy()

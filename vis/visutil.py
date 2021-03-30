@@ -151,9 +151,11 @@ def showImg(img, scale=1, title=None, cmap=None, resolution=None, vmin=0., vmax=
         resolution = (int(img.shape[1]*scale), int(img.shape[0]*scale))
         fig, ax = newPlot(resolution=resolution)
     ax.set_axis_off()
-    ax.imshow(img, cmap, vmin=vmin, vmax=vmax)
     if title is not None:
         fig.suptitle(title)
+
+    ax.imshow(img, cmap, vmin=vmin, vmax=vmax)
+    plt.show()
     return fig, ax
 def imageGrid(imgs, shape=None, zoomfac=1):
     imgs = np.array(imgs)

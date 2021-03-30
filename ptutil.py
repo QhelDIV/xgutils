@@ -356,6 +356,8 @@ def point2voxel(points, grid_dim=32, ret_coords=False):
     Returns:
         torch.Tensor: [B,(grid_dim,)*x_dim]
     """
+    if type(points) is np.ndarray:
+        points = torch.from_numpy(points).float()
     voxel = torch.zeros(points.shape[0], *((grid_dim,)*points.shape[-1])).type_as(points)
     inds = point2index(points, grid_dim)
     # make all the indices flat to avoid using for loop for batch

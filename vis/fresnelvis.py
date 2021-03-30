@@ -37,7 +37,7 @@ def addBBox(scene, bb_min=np.array([-1,-1,-1.]), bb_max=np.array([1,1,1.])):
     axs.radius[:] = 0.005
     axs.color[:] =  [ [[.5,0,0],[.5,0,0]] ] * 12
 dflt_camera = dict(camPos=np.array([2,2,2]), camLookat=np.array([0.,0.,0.]),\
-    camUp=np.array([0,1,0]),camHeight=2.414,resolution=(128,128))
+    camUp=np.array([0,1,0]),camHeight=2.414,resolution=(256,256))
 def renderMeshCloud(    mesh=None, mesh_outline_width=None, meshflat=False,  # mesh settings
                         cloud=None, cloudR=0.006, cloudC=None,  # pc settings
                         camPos=None, camLookat=None, camUp=np.array([0,0,1]), camHeight=1.,  # camera settings

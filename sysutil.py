@@ -16,7 +16,7 @@ from PIL import Image
 from scipy.interpolate import RegularGridInterpolator
 
 from collections.abc import Iterable
-from time import time, sleep
+import time
 from tqdm import tqdm
 
 EPS = 0.000000001
@@ -82,7 +82,15 @@ def recursiveMap(container, func):
     #         yield type(item)(recursive_map(item, func))
     #     else:
     #         yield func(item)    
-
+# time
+class Timer():
+    def __init__(self):
+        self.time_stamps=[]
+        self.update(print_time=False)
+    def update(self, print_time=True):
+        self.time_stamps.append(time.time())
+        if print_time:
+            print(self.time_stamps[-1]-self.time_stamps[-2])
 # misc
 def listdir(directory, return_path=True):
     """List dir and sort by numericals (if applicable)
@@ -163,7 +171,7 @@ def parallelMap(func, args, batchFunc=None, zippedIn=True, zippedOut=False, core
 
     Args:
         stderr (function): func
-        args (arguments): [arg1s, arg2s ,..., argns](zippedIn==True) or [[arg1,arg2,...,argn], ...](zippedIn=False)
+        args (arguments): [arg1s, arg2s ,..., argns](zippedIn==False) or [[arg1,arg2,...,argn], ...](zippedIn=True)
         batchFunc (func, optional): TODO. Defaults to None.
         zippedIn (bool, optional): See [args]. Defaults to True.
         zippedOut (bool, optional): See [Returns]. Defaults to False.
