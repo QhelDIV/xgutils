@@ -122,8 +122,18 @@ def filterMesh(vert, face, filterV):
     assert (nf>0).all(), "New face list contains removed vertices" 
     return nv, nf
     # TODO filterF
+def normalizePointSet(vert, no_scale=False):
+    #center = vert.mean(axis=0)
+    bbmax = vert.max(axis=0)
+    bbmin = vert.min(axis=0)
+    bbcenter = (bbmax + bbmin) / 2.
+    bbscale  = (bbmax - bbmin).max() / 2.
+    vert = vert - bbcenter
+    if no_scale==False:
+        vert = vert/bbscale
+    return vert
 # reconstruction & sampling
-def array2mesh(array, thresh=0., dim=3, coords=None, bbox=np.array([[-1,-1],[1,1]]), return_coords=False, \
+def array2mesh(array, thresh=0., dim=3, coords=None, bbox=np.array([[-1,-1,-1],[1,1,1]]), return_coords=False, \
                 if_decimate=False, decimate_face=4096, cart_coord=True):
     """from 1-D array to 3D mesh
 
@@ -325,7 +335,7 @@ def morph_voxelization(vert, face, sampleN=1000000, grid_dim=128, selem_size=6):
         First sample cloud from mesh, voxelize the cloud, dilate, floodfill, erose. Note that dilate+erose=closing
     """
     vmin, vmax = np.abs(vert).min(), np.abs(vert).max()
-    if vmax<1.:
+    if vmax>1.:
         print(f"Warning: Mesh should be fallen into [-1,1]^3 bounding box! vmin:{vmin} vmax:{vmax}")
     samples = sampleMesh(vert, face, sampleN)
     voxel, coords = ptutil.ths2nps(ptutil.point2voxel(samples[None,...], grid_dim=grid_dim, ret_coords=True))

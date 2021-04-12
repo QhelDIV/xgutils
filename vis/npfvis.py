@@ -85,13 +85,13 @@ def plot_2d_samples(Xct:np.ndarray, Yct:np.ndarray, Xtg:np.ndarray, Ytg:np.ndarr
     boxes_img = visutil.fig2img(fig)
     return boxes_img
 
-def plot_3d_recon(Xtg, Ytg, if_decimate=False, camera_kwargs=dict()):
+def plot_3d_recon(Xtg, Ytg, if_decimate=False, camera_kwargs=dict(), meshC=fresnelvis.gray_color):
     dflt_camera = dict(camPos=np.array([2,2,2]), camLookat=np.array([0.,0.,0.]),\
         camUp=np.array([0,1,0]),camHeight=2.414,resolution=(256,256))
     camera_kwargs = sysutil.dictUpdate(dflt_camera, camera_kwargs)
 
     vert, face = geoutil.array2mesh(Ytg, dim=3, coords=Xtg, thresh=.5, if_decimate=if_decimate)
-    img = fresnelvis.renderMeshCloud(mesh={'vert':vert, 'face':face}, **camera_kwargs)
+    img = fresnelvis.renderMeshCloud(mesh={'vert':vert, 'face':face}, meshC=meshC, **camera_kwargs)
     return img
 def plot_3d_sample(Xct:np.ndarray, Yct, Xtg, Ytg:np.ndarray=None, pred_y:np.ndarray=None, \
             cloudR=0.01, camera_kwargs=dict(), show_images=['GT','pred','context']):
@@ -147,7 +147,7 @@ def plot_3d_sample(Xct:np.ndarray, Yct, Xtg, Ytg:np.ndarray=None, pred_y:np.ndar
     return imggrid, imgs
 
 def plot_3d_samples(Xct:np.ndarray, Yct:np.ndarray, Xtg:np.ndarray, Ytg:np.ndarray=None, pred_ys:np.ndarray=None, \
-        camera_kwargs={}, samples=5,
+        camera_kwargs={}, samples=5, return_list=False,
 ):    
     context_x, context_y, target_x, target_y, pred_target_ys = Xct, Yct, Xtg, Ytg, pred_ys
     imgs, pred_imgs, context_imgs  = [], [], []
@@ -178,6 +178,8 @@ def plot_3d_samples(Xct:np.ndarray, Yct:np.ndarray, Xtg:np.ndarray, Ytg:np.ndarr
         pred_imgs.append( pred_img )
         context_imgs.append( context_img )
     imglist = [GT_img, *pred_imgs, predmean_img, *context_imgs]
+    if return_list==True:
+        return imglist
     imgs = visutil.imageGrid(imglist, shape=(2,samples+1))
     return imgs
 def plot_samples(Xct:np.ndarray, Yct:np.ndarray, Xtg:np.ndarray, Ytg:np.ndarray=None, pred_ys:np.ndarray=None, dim=1, **kwargs):

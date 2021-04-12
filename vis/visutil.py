@@ -9,6 +9,7 @@ from PIL import Image
 import copy
 
 import numpy as np
+import torch
 import scipy
 
 import matplotlib as mpl
@@ -21,7 +22,7 @@ from mpl_toolkits.mplot3d import Axes3D  # This import registers the 3D projecti
 import matplotlib.pyplot as plt
 
 from xgutils import nputil as util
-from xgutils import nputil
+from xgutils import nputil, ptutil
 
 div=8
 marginIn=.3
@@ -543,12 +544,28 @@ def field3DPlot(outDir, figName, planes, cmap=sdf_cmap,sdfPlot=False, video=Fals
     #plt.close()
     return grid
 
-
 def plotPCs(pointclouds, cmap='rainbow', plotrange=np.array([[0.,1.],[0.,1.],[0.,1.]]), resolution=(400.,400.), fig=None, ax=None):
     fig, ax = newPlot3D(resolution=resolution, projection='3d',fig=fig, ax=ax)
     for pointcloud in pointclouds:
         all_pts = util.subsampleBoolArray(np.ones(pointcloud.shape[0],dtype=bool), 10000)#./pointclouds.shape[0])
         im = ax.scatter(pointcloud[all_pts,0], pointcloud[all_pts,1], pointcloud[all_pts,2])#, s=rgba_colors[:,3]*10)#, mpl.rcParams['lines.markersize'] ** 2/5.)
+    return fig, ax
+import matplotlib.patches as patches
+
+def OctreePlot2D(tree, dim, depth, **kwargs):
+    assert dim==2
+    boxcenter, boxlen, tdepth = ptutil.ths2nps(ptutil.tree2bboxes(torch.from_numpy(tree), dim=dim, depth=depth))    
+    dflt_kwargs=dict(plotrange=np.array([[-1.,1.],[-1.,1.]])*1.2)
+    dflt_kwargs.update(kwargs)
+    maxdep = tdepth.max()
+    fig, ax = newPlot( **dflt_kwargs )
+    for i in range(len(tdepth)):
+        dep=tdepth[i]
+        length = boxlen[i]
+        corner = (boxcenter[i]-boxlen[i])        
+        lw=1+.5*np.exp(-dep)
+        rect = patches.Rectangle(corner, 2*length, 2*length, linewidth=lw, edgecolor=plt.cm.plasma(dep/maxdep), facecolor='none')
+        ax.add_patch(rect)
     return fig, ax
 
 def seabornScatterPlot(samples, labels):
@@ -560,3 +577,5 @@ def seabornScatterPlot(samples, labels):
     plt.xlim(-0.5, 0.5)
     plt.ylim(-0.5, 0.5)
     plt.gca().set_aspect('equal', adjustable='box')
+
+

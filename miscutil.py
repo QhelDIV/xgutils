@@ -8,7 +8,7 @@ from xgutils import *
 import igl
 
 ASSETS_DIR = os.path.dirname(os.path.abspath(__file__))+"/assets/"
-def load_mesh(name):
+def load_mesh(name="bunny.ply"):
     face, vert = igl.read_triangle_mesh(os.path.join(ASSETS_DIR, name) )
     return face, vert
 

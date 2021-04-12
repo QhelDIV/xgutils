@@ -1,8 +1,12 @@
+import os
+import sys
+import glob
 import torch
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from xgutils import nputil, sysutil
+
 def sampleNDSphere(shape):
     """generate random sample on n-d sphere
 
@@ -44,11 +48,12 @@ def nps2ths(arrays, device="cuda"):
             array = arrays[key]
             dic[key] = np2th(array, device=device)
         return dic
-    else:
-        tensors = []
+    elif type(arrays) is list or type(arrays) is tuple:
         for array in arrays:
             tensors.append(np2th(array, device=device))
         return tuple(tensors)
+    else:
+        return np2th(arrays)
 def ths2nps(tensors):
     if type(tensors) is dict:
         dic={}
@@ -264,6 +269,34 @@ def fold_unittest():
     assert (voxels!=decompress).sum()==0
     print("All past")
 
+# binary 
+def dec2bin(x, bits):
+    mask = 2 ** torch.arange(bits - 1, -1, -1).type_as(x)
+    #mask = 2 ** torch.arange(bits).type_as(x)
+    return x.unsqueeze(-1).bitwise_and(mask).ne(0).long()
+def bin2dec(b, bits):
+    mask = 2 ** torch.arange(bits - 1, -1, -1).type_as(b)
+    #mask = 2 ** torch.arange(bits).type_as(x)
+    return torch.sum(mask * b, -1)
+
+def zorder2tree(x, dim, bits):
+    #timer = sysutil.Timer()
+    shape = x.shape
+    #timer.update()
+    x += 1 << (bits*dim )
+    #timer.update()
+    shifts = torch.arange(bits+1).type_as(x) * dim
+    #timer.update()
+    treeind = (x.unsqueeze(-1) >> shifts)
+    #timer.update()
+    treeind = treeind.reshape(*shape[:-1], -1)
+    #timer.update()
+    # torch.unique could be very slow for cpu, 
+    treeind = torch.from_numpy(np.unique(treeind.numpy()))
+#    treeind = torch.unique(treeind, dim=-1, sorted=True)
+    #timer.update()
+    return treeind
+
 # point to index and reverse
 def ravel_index(tensor, shape):
     raveled = torch.zeros(*tensor.shape[:-1]).type_as(tensor)
@@ -304,7 +337,36 @@ def ravel_unittest():
     assert ( idx==(raveled[0].numpy())).all(), print(idx,"\n",raveled[0].numpy())
     print(unraveled)
 
-def point2index(points, grid_dim=32, ravel=False, ret_relative=False):
+def ravel_index_zorder(tensor, depth):
+    tshape = tensor.shape
+    dim = tshape[-1]
+    binstrings = dec2bin(tensor, bits=depth)
+    zorder_ind = binstrings.transpose(-1,-2)
+    zorder_ind = zorder_ind.reshape( *tshape[:-1], -1)
+    raveled_zorder = bin2dec(zorder_ind, bits=depth*dim)
+    return raveled_zorder
+def unravel_index_zorder(tensor, dim, depth):
+    tshape = tensor.shape
+    binstrings = dec2bin(tensor, bits=depth*dim)
+    zorder_ind = binstrings.reshape(*tshape, -1, dim)
+    zorder_ind = zorder_ind.transpose(-1,-2)
+    unraveled_zorder = bin2dec(zorder_ind, bits=depth)
+    return unraveled_zorder
+def zorder_ravel_unittest():
+    idx = torch.arange(16)
+    mind= unravel_index(idx, shape=(4,4))
+    raveled = ravel_index_zorder(mind, depth=2)
+    unraveled=unravel_index_zorder(raveled,dim=2,depth=2)
+    print("idx", idx)
+    print("mind", mind)
+    print("raveled", raveled)
+    print("unraveled", unraveled)
+    assert (mind==unraveled).all()
+def flat2zorder(raveled_flat, dim, depth):
+    flat_inds      = unravel_index(raveled_flat, shape=(2**depth,)*dim)
+    raveled_zorder = ravel_index_zorder(flat_inds, depth=depth)
+    return raveled_zorder
+def point2index(points, grid_dim=32, ravel=False, ravel_type="flat", ret_relative=False):
     """Convert points in [-1,1]*dim to indices of (grid_dim,)*dim grid.
     The grid is generated using 'in' mode (pixel/voxel mode)
 
@@ -313,39 +375,81 @@ def point2index(points, grid_dim=32, ravel=False, ret_relative=False):
         grid_dim (int, optional): dimension of the grid. Defaults to 32.
 
     Returns:
-        [*,dim]: the returned indices
+        [*,dim]: the returned indices if ravel=False
+        [*,]:    raveld indices if ravel=True
     """
     pt_dim = points.shape[-1]
-    offset = 1./grid_dim
-    eps = 1e-5 # scale (1,1,...) slightly inside to avoid lying on the boundary
-    # max loc 1 is corresponding to  2-2*offset, we need to multiply (grid_dim-1)/(2-2*offset)
-    scale = (grid_dim-1-eps)/(2-2*offset)
-    shift_points = (points + 1 - offset) * scale
+    # obsolete implementation
+    #    offset = 1./grid_dim
+    #    eps = 1e-5 # scale (1,1,...) slightly inside to avoid lying on the boundary
+    #    # max loc 1 is corresponding to  2-2*offset, we need to multiply (grid_dim-1)/(2-2*offset)
+    #    scale = (grid_dim-1-eps)/(2-2*offset)
+    #    shift_points = (points + 1 - offset) * scale
+
+    # first map points from [-1,1] to [0, 1], then to [-0.5, grid_dim-0.5]
+    points01 = (points+1)/2
+    shift_points = points01 * grid_dim - 0.5
+    # round float to get index, clamping to prevent error in corner cases
     float_index = torch.clamp(torch.round(shift_points), min=0.0, max=grid_dim-1)
     index = float_index.long()
     if ravel==True:
-        index = ravel_index(index, shape=(grid_dim,)*pt_dim)
+        if ravel_type=="flat":
+            index = ravel_index(index, shape=(grid_dim,)*pt_dim)
+        elif ravel_type=="zorder":
+            depth = np.log2(grid_dim)
+            assert np.mod(depth, 1)==0., np.mod(depth,1)
+            index = ravel_index_zorder(index, depth=depth)
     if ret_relative==True:
-        grid_points   = float_index / scale - 1 + offset
+        grid_points   = index2point(float_index, grid_dim=grid_dim)
         relative_dist = points - grid_points
         return index, grid_points, relative_dist
     else:
         return index
 def index2point(index, grid_dim=32):
-    offset = 1./grid_dim
-    eps = 1e-5
-    scale = (grid_dim-1-eps)/(2-2*offset)
-    points = index.float() / scale - 1 + offset
+    """ inverse of point2index
+        grid index to coordinate, fall into the center of a cell
+        grid_dim can be an array
+    """
+    #offset = 1./grid_dim
+    # obsolete implementations
+    #    eps = 1e-5
+    #    scale = (grid_dim-1-eps)/(2-2*offset)
+    #    points = index.float() / scale - 1 + offset
+    points01 = ( index + .5 ) / grid_dim
+    points = points01*2 -1
     return points
-def p2i_unittest():
-    points = torch.rand(2000,2) * 2 - 1. #*1.6 - .8
-    rind, grid_points, relative_dist = point2index(points, ret_relative=True, grid_dim=4)
-    fig, ax = visutil.newPlot(plotrange=np.array([[-1.,1.],[-1.,1.]]))
-    ax.scatter(points.numpy()[:,0],      points.numpy()[:,1], s=2)
-    ax.scatter(grid_points.numpy()[:,0], grid_points.numpy()[:,1], zorder=4)
-    ax.quiver(grid_points.numpy()[:,0], grid_points.numpy()[:,1], relative_dist.numpy()[:,0], relative_dist.numpy()[:,1], angles='xy', scale_units='xy', scale=1)
-    plt.show()
-    print((grid_points),(points), (relative_dist))
+
+
+#from sysutil import Timer
+def point2tree(points, depth=6, max_length=-1):
+    #timer = sysutil.Timer()
+    dim = points.shape[-1]
+    grid_dim = 2**depth
+    #timer.update()
+    zorder = point2index(points, grid_dim=grid_dim, ravel=True, ravel_type="zorder")
+    #timer.update()
+    tree = zorder2tree(zorder, dim=dim, bits=depth)
+    #timer.update()
+    if max_length>-1:
+        tree = tree[:max_length]
+    return tree
+def tree2bboxes(tree, dim, depth):
+    first_bit = (torch.log2(tree.float()).floor()).long()
+    #shifts = torch.arange(depth+1).type_as(x) * dim
+    #treeind = (x.unsqueeze(-1) >> shifts)
+    tdepth = (first_bit / dim)
+    # remove the first 1 bit (root bit)
+    #significant_bit =
+    treeind   = tree - 2**first_bit
+    # (*, dim)
+    treeind   = unravel_index_zorder(treeind, dim=dim, depth=depth)
+
+    grid_dims = 2**tdepth
+    boxcenter = index2point(treeind, grid_dim=grid_dims.unsqueeze(-1))
+    boxlen = 1./(2**tdepth) # [-1,1]
+
+    return boxcenter, boxlen, tdepth
+
 def point2voxel(points, grid_dim=32, ret_coords=False):
     """Voxelize point cloud, [i][j][k] correspond to x, y, z directly
 
