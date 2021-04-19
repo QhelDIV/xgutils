@@ -67,7 +67,7 @@ class FlyObj():
         if self.save_dir is not None:
             sysutil.mkdirs(self.save_dir)
             save_path = os.path.join(self.save_dir, f"{name}.npy")
-            np.save(save_path, data)
+            np.save(save_path, ptutil.ths2nps(data))
     def load(self, name):
         if self.load_dir is None:
             return None
@@ -120,7 +120,9 @@ def dataset_generator(pl_module, dset, data_indices=[0,1,2], yield_ind=True, **g
         else:
             pl_module.eval()
 class VisCallback(Callback):
-    def __init__(self, visual_indices=[0,1,2,3,4,5], all_indices=False, every_n_epoch=3, no_sanity_check=False,data_dir = None):
+    def __init__(self,  visual_indices=[0,1,2,3,4,5], all_indices=False, \
+                        every_n_epoch=3, no_sanity_check=False, \
+                        data_dir = None, use_dloader=False):
         super().__init__()
         self.__dict__.update(locals())
         self.classname = self.__class__.__name__
@@ -138,7 +140,10 @@ class VisCallback(Callback):
         dset = dloader.dataset
         if self.all_indices==True:
             self.visual_indices = list(range(len(dset)))
-        datagen      = dataset_generator(pl_module, dset, self.visual_indices)
+        if self.use_dloader==False:
+            datagen      = dataset_generator(pl_module, dset, self.visual_indices)
+        else:
+            datagen      = dloader
         computegen   = FlyObj(data_processor=self.compute_batch, save_dir=compute_dir, load_dir=cload_dir, on_the_fly=fly_compute)
         visgen       = ImageFlyObj(data_processor=self.visualize_batch, save_dir=visual_dir, load_dir=vload_dir)
         imgsgen,imgs = visgen(computegen(datagen)), []
@@ -187,7 +192,7 @@ class VisCallback(Callback):
                 all_images.append(img)
         summary = visutil.imageGrid(all_images, shape=(rows, -1), zoomfac=zoomfac)
         return {self.classname: {"caption":self.classname, "image":summary}}
-    def log_summary_images(self, trainer, pl_module, summary_imgs):
+    def log_summary_images(self, trainer, pl_module, summary_imgs, x_axis="epoch"):
         # wandb logger
         for key in summary_imgs:
             t = summary_imgs[key]
@@ -195,36 +200,47 @@ class VisCallback(Callback):
             caption = t["caption"]
             image   = t["image"]
             #log_image(trainer, title, caption, image, trainer.global_step)
+            x_val = trainer.current_epoch if x_axis=="epoch" else trainer.global_step
             trainer.logger.experiment.log( \
                 {title:[wandb.Image(image,caption=caption)], \
-                    "global_step": trainer.global_step})
+                    x_axis: x_val})
+
 
 def null_logger(*args, **kwargs):
     return None
-def debug_model(trainer, resume=False, load_compute=False, load_visual=False):
+def get_debug_model(trainer, resume=False):
     if resume == True:
-        pl_model, dloader = trainer.test_mode()
+        pl_model, test_dloader = trainer.test_mode()
     else:
-        pl_model, dloader = trainer.test_mode(resume_from=None)
+        pl_model, test_dloader = trainer.test_mode(resume_from=None)
+    trainer.data_module.setup("train")
+    train_dloader = trainer.data_module.train_dataloader(shuffle=False)
+
+    train_dloader.num_workers = 0 # it will be very slow to invoke subprocesses (num_workers>0)
+    test_dloader.num_workers  = 0
+    return pl_model, train_dloader, test_dloader
+def debug_model(trainer, resume=False, load_compute=False, load_visual=False):
+    pl_model, train_dloader, test_dloader = get_debug_model(trainer, resume=resume)
     print("Test run train/val step")
-    batch = next(iter(dloader))
-    thbatch = ptutil.ths2device(batch,"cuda")
+    th_train_batch = ptutil.ths2device(next(iter(train_dloader)), "cuda")
+    th_test_batch  = ptutil.ths2device(next(iter(test_dloader)), "cuda")
     origin_logger = pl_model.log
     try:
         pl_model.log = null_logger
-        loss = pl_model.training_step(thbatch, batch_idx=0)
+        loss = pl_model.training_step(th_train_batch, batch_idx=0)
         print(f"Batch {0} train loss:", loss)
-        loss = pl_model.validation_step(thbatch, batch_idx=0)
+        loss = pl_model.validation_step(th_test_batch, batch_idx=0)
         print(f"Batch {0} val loss:",   loss)
     finally:
         pl_model.log = origin_logger
+
     print(trainer.callbacks)
     for callback in trainer.callbacks:
         if callback.__class__.__name__ == "ModelCheckpoint":
             continue
         if callback.__class__.__name__ == "ProgressBar":
             continue
-        returns = callback.process(pl_model, dloader, visual_summary=False, load_compute=load_compute, load_visual=load_visual)
+        returns = callback.process(pl_model, test_dloader, visual_summary=False, load_compute=load_compute, load_visual=load_visual)
     print("Success")
-
+    return pl_model, train_dloader, test_dloader
     

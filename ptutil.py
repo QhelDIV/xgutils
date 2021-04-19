@@ -49,6 +49,7 @@ def nps2ths(arrays, device="cuda"):
             dic[key] = np2th(array, device=device)
         return dic
     elif type(arrays) is list or type(arrays) is tuple:
+        tensors = []
         for array in arrays:
             tensors.append(np2th(array, device=device))
         return tuple(tensors)

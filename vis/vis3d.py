@@ -57,3 +57,26 @@ def SparseVoxelPlot(sparse_voxel, depth=4, varying_color=False, camera_kwargs=di
     renderer.add_box(center=voxel_coords, spec=np.zeros((3))+box_len, color=color, solid=0.)
     img = renderer.render()
     return img
+
+def IndexVoxelPlot(pos_ind, val_ind, val_max=1024, depth=4, camera_kwargs=dict(camPos=np.array([2,2,2]), resolution=(512,512))):
+    resolution = camera_kwargs["resolution"]
+    if len(pos_ind)==0:
+        return np.zeros((resolution[0], resolution[1], 3))
+    grid_dim = 2**depth
+    box_len  = 2/grid_dim/2
+
+    renderer = fresnelvis.FresnelRenderer(camera_kwargs=camera_kwargs)#.add_mesh({"vert":vert, "face":face})
+    voxel_inds   = ptutil.unravel_index( torch.from_numpy(pos_ind), shape=(2**depth,)*3 )
+    voxel_coords = ptutil.ths2nps(ptutil.index2point(voxel_inds, grid_dim=grid_dim))
+
+    color = plt.cm.Blues(val_ind/val_max)[...,:3]
+    renderer.add_box(center=voxel_coords, spec=np.zeros((3))+box_len, color=color, solid=0.)
+    img = renderer.render()
+    return img
+def meshCloudPlot(Ytg, Xbd):
+    vert, face = geoutil.array2mesh(Ytg.reshape(-1), thresh=.5, coords=nputil.makeGrid([-1,-1,-1],[1,1,1],[64,64,64], indexing="ij"))
+    
+    vis_camera = dict(camPos=np.array([2,2,2]), camLookat=np.array([0.,0.,0.]),\
+            camUp=np.array([0,1,0]),camHeight=2,resolution=(512,512), samples=16)
+    img = fresnelvis.renderMeshCloud({"vert":vert, "face":face}, cloud=Xbd, cloudR=.01, **vis_camera)
+    return img
